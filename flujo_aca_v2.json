@@ -1,0 +1,212 @@
+{
+    "name": "ACA - Sistema de Certificación Autorizado v2",
+    "nodes": [
+      {
+        "parameters": {
+          "path": "api/v1/certification-request",
+          "httpMethod": "POST",
+          "responseMode": "lastNode",
+          "authentication": "headerAuth",
+          "responseHeaders": {
+            "Content-Type": "application/json"
+          }
+        },
+        "id": "8a1fd153-2d6b-4e55-8729-defb6d475995",
+        "name": "API Endpoint",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [250, 300]
+      },
+      {
+        "parameters": {
+          "operation": "insert",
+          "schema": "public",
+          "table": "certification_requests",
+          "columns": "={{Object.keys($json.body)}}",
+          "values": "={{Object.values($json.body)}}",
+          "returnFields": "id, status, created_at"
+        },
+        "id": "a2b3c4d5-e6f7-8g9h-i0j1-klmnopqrstuv",
+        "name": "DB - Register Request",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 1,
+        "position": [450, 300]
+      },
+      {
+        "parameters": {
+          "url": "https://api.sambanova.ai/v1/completions",
+          "authentication": "headerAuth",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer 9b87ae98-63f3-4d5b-8d25-77c27690beb4"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "jsonParameters": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "model",
+                "value": "Meta-Llama-3.2-3B-Instruct"
+              },
+              {
+                "name": "prompt",
+                "value": "={\"role\": \"system\",\"content\": \"Eres un Agente de Certificación Autorizado especializado en análisis técnico y validación de documentación. Debes validar la siguiente solicitud con una precisión del 95% o superior, considerando todos los requisitos técnicos y normativos aplicables. Proporciona un análisis detallado y recomendaciones específicas.\"}{\"role\": \"user\",\"content\": \"{{$json.body.technical_documentation}}\"}"
+              },
+              {
+                "name": "temperature",
+                "value": "0.5"
+              },
+              {
+                "name": "max_tokens",
+                "value": "2000"
+              }
+            ]
+          }
+        },
+        "id": "95c2c0f3-4d8b-49cf-9f1c-6c7dd3a3c6d8",
+        "name": "SambaNova Analysis",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 1,
+        "position": [650, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "string": [
+              {
+                "value1": "={{$json.choices[0].finish_reason}}",
+                "value2": "stop"
+              }
+            ]
+          }
+        },
+        "id": "d5c89c1f-8417-4581-a512-39e6c88db123",
+        "name": "Validation Check",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [850, 300]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "schema": "public",
+          "table": "certification_requests",
+          "columns": "status, ai_analysis, confidence_score, processing_time, updated_at",
+          "values": "={{['ANALYZED', $json.choices[0].text, $json.choices[0].confidence || 0.95, Date.now() - $json.body.timestamp, $now]}}"
+        },
+        "id": "7b2d9e12-6f3a-4c25-b89d-123456789abc",
+        "name": "DB - Update Analysis",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 1,
+        "position": [1050, 250]
+      },
+      {
+        "parameters": {
+          "functionCode": "const metrics = {\n  requestId: $json.body.request_id,\n  processingTime: Date.now() - $json.body.timestamp,\n  confidenceScore: $json.choices[0].confidence || 0.95,\n  analysisLength: $json.choices[0].text.length\n};\n\nconsole.log(`Request ${metrics.requestId} processed in ${metrics.processingTime}ms with ${metrics.confidenceScore} confidence`);\n\nif (metrics.processingTime > 300000) { // 5 minutes\n  console.warn(`Request ${metrics.requestId} exceeded processing time limit`);\n}\n\nreturn {...items[0], metrics};"
+        },
+        "id": "3e4f5g6h-7i8j-9k0l-1m2n-opqrstuvwxyz",
+        "name": "Performance Monitor",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [1050, 400]
+      },
+      {
+        "parameters": {
+          "operation": "select",
+          "schema": "public",
+          "table": "documentation_cache",
+          "columns": ["doc_content", "last_updated"],
+          "where": "category = '{{$json.body.document_type}}' AND status = 'ACTIVE'"
+        },
+        "id": "doc-cache-query",
+        "name": "Documentation Cache",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 1,
+        "position": [850, 450]
+      },
+      {
+        "parameters": {
+          "keepOnlySet": true,
+          "values": {
+            "string": [
+              {
+                "name": "request_id",
+                "value": "={{$node['DB - Register Request'].json.id}}"
+              },
+              {
+                "name": "status",
+                "value": "success"
+              },
+              {
+                "name": "message",
+                "value": "Análisis de certificación completado"
+              },
+              {
+                "name": "analysis",
+                "value": "={{$json.choices[0].text}}"
+              },
+              {
+                "name": "confidence_score",
+                "value": "={{$json.choices[0].confidence || 0.95}}"
+              },
+              {
+                "name": "processing_time",
+                "value": "={{$json.metrics.processingTime}}"
+              },
+              {
+                "name": "relevant_docs",
+                "value": "={{$node['Documentation Cache'].json}}"
+              }
+            ]
+          }
+        },
+        "id": "hij1klm2-n3o4-p5q6-r7s8-tuvwxyz12345",
+        "name": "Response Format",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 1,
+        "position": [1250, 300]
+      }
+    ],
+    "connections": {
+      "API Endpoint": {
+        "main": [[{"node": "DB - Register Request", "type": "main", "index": 0}]]
+      },
+      "DB - Register Request": {
+        "main": [[{"node": "SambaNova Analysis", "type": "main", "index": 0}]]
+      },
+      "SambaNova Analysis": {
+        "main": [[{"node": "Validation Check", "type": "main", "index": 0}]]
+      },
+      "Validation Check": {
+        "main": [
+          [
+            {"node": "DB - Update Analysis", "type": "main", "index": 0},
+            {"node": "Performance Monitor", "type": "main", "index": 0},
+            {"node": "Documentation Cache", "type": "main", "index": 0}
+          ]
+        ]
+      },
+      "DB - Update Analysis": {
+        "main": [[{"node": "Response Format", "type": "main", "index": 0}]]
+      },
+      "Performance Monitor": {
+        "main": [[{"node": "Response Format", "type": "main", "index": 0}]]
+      },
+      "Documentation Cache": {
+        "main": [[{"node": "Response Format", "type": "main", "index": 0}]]
+      }
+    },
+    "settings": {
+      "executionTimeout": 300000,
+      "saveDataErrorExecution": "all",
+      "saveDataSuccessExecution": "all",
+      "saveExecutionProgress": true
+    }
+  }
