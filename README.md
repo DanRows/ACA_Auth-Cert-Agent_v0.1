@@ -15,20 +15,4 @@ Sistema de Agente de Certificación Autorizado (ACA) utilizando SambaNova e inte
 2. Copiar .env.example a .env y configurar
 3. Ejecutar `docker-compose up -d`
 
-# requirements.txt
 
-
-# pyproject.toml
-
-
-# tests/conftest.py
-
-
-# Configuración del motor de base de datos para pruebas
-T
-# tests/test_api.py
-
-
-# tests/test_services.py
-
-# setup.cfg
